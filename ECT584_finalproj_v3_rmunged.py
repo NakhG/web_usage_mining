@@ -85,8 +85,6 @@ Exploratory data analysis: Phase 1
 What might we be interested in?
 
 - Breakdown of browser types (user agent)
-- Breakdown of screen sizes
-- 
 '''
 
 #Lets look at types of browsers
@@ -208,7 +206,11 @@ dataiku_userlogs['location'].nunique()  #only 58 unique pages: not small, not hu
 dataiku_userlogs['location'].value_counts() #not surprising: home pg, landing pgs of main sections
 #looks like we need to trim some trailing info from some urls: anything to the right of "?"
 
-
+#How many repeat visits do we have in the data?
+#That would be visit_id's w/ multiple session_id'
+dataiku_userlogs.groupby(by=['visitor_id'])['session_id'].count()
+# a lot of them have more than one session, but how could we count this up better?
+dataiku_userlogs.pivot_table(values = ['session_id'], index=['visitor_id'], aggfunc = lambda x: x.nunique())
 
 #So at this point we have done the following feature engineering:
 #geolocate ip addresses: country, region, zip, lat, long
@@ -233,10 +235,10 @@ dataiku_userlogs = dataiku_userlogs[['visitor_id', 'session_id','server_timestam
 #Lets sort by session_id, server_timestamp_sec .. and then group by session id
 agg = dataiku_userlogs[['server_date','server_time', 'server_timestamp_sec', 'session_id', 'location', 'referer', 'path.completion.', 'pc.answer']].sort(['session_id', 'server_timestamp_sec']).groupby('session_id')
 
-for name, group in agg:
-    print(name)
-    print(group)
-    print('\n')
+#for name, group in agg:
+#    print(name)
+#    print(group)
+#    print('\n')
     
 len(agg.groups)  #there are 3946 session_ids
 #verify
@@ -263,9 +265,9 @@ Smarter way to do this?
 #CREATE THE TIME SPENT PER PAGE COLUMN
 
 #Practice using the shift function, which we'll use to get time differences
-df = pd.DataFrame({"A": [100, 110, 122, 151], "B": [12, 7, 5, 4]})
-df['timespent_A'] = abs(df['A'] - df['A'].shift(-1))
-df  #ok, this seems similar to what we want to apply to every group
+#df = pd.DataFrame({"A": [100, 110, 122, 151], "B": [12, 7, 5, 4]})
+#df['timespent_A'] = abs(df['A'] - df['A'].shift(-1))
+#df  #ok, this seems similar to what we want to apply to every group
 
 def time_diff(column):
     return abs(column - column.shift(-1))
@@ -273,10 +275,10 @@ def time_diff(column):
 dataiku_userlogs['time_spent'] = agg['server_timestamp_sec'].transform(time_diff)
 
 agg = dataiku_userlogs[['server_date','server_time', 'server_timestamp_sec', 'time_spent', 'session_id', 'location', 'referer', 'path.completion.', 'pc.answer']].sort(['session_id', 'server_timestamp_sec']).groupby('session_id')
-for name, group in agg:
-    print(name)
-    print(group)
-    print('\n')  #IT WORKS
+#for name, group in agg:
+#    print(name)
+#    print(group)
+#    print('\n')  #IT WORKS
 
 #What are we going to do about 1-page visits (bounces) and time spent on last page?
 #methodologies here: https://cran.r-project.org/web/packages/reconstructr/vignettes/Introduction.html
@@ -295,10 +297,10 @@ import itertools
 dataiku_userlogs['session_path_full'] = agg['location'].transform(itertools.chain)
 
 agg = dataiku_userlogs[['server_date','server_time', 'server_timestamp_sec', 'time_spent', 'session_id', 'location', 'session_path_full', 'page_category', 'referer', 'path.completion.', 'pc.answer']].sort(['session_id', 'server_timestamp_sec']).groupby('session_id')
-for name, group in agg:
-    print(name)
-    print(group)
-    print('\n')
+#for name, group in agg:
+#    print(name)
+#    print(group)
+#    print('\n')
 
 dataiku_userlogs['session_path_full'] = dataiku_userlogs['session_path_full'].apply(list)
 
@@ -309,7 +311,7 @@ dataiku_userlogs['session_categories'] = dataiku_userlogs['session_categories'].
 dataiku_userlogs[['session_id', 'location', 'session_path_full', 'session_categories']].head(11)
 
 #something wrong here: thinks we're trying to turn itertools.chain into a float() ...
-dataiku_userlogs['session_times_spent'] = agg['time_spent'].transform(itertools.chain)
+#dataiku_userlogs['session_times_spent'] = agg['time_spent'].transform(itertools.chain)
 #cheap solution: turn the times into strings, and we'll convert them all back
 dataiku_userlogs['time_spent'] = dataiku_userlogs['time_spent'].astype(str)
 agg = dataiku_userlogs[['server_date','server_time', 'server_timestamp_sec', 'time_spent', 'session_id', 'location', 'session_path_full', 'page_category', 'referer', 'path.completion.', 'pc.answer']].sort(['session_id', 'server_timestamp_sec']).groupby('session_id')
@@ -325,7 +327,7 @@ dataiku_userlogs['session_times_spent'] = dataiku_userlogs['session_times_spent'
 
 '''
 Now we have all the variables we need to make a dataframe we want:
-The new df will be:
+The new df will include:
 session_id
 clickstream
 clickstream categories
@@ -335,7 +337,7 @@ times spent on each page of the clickstream
 #solution: https://stackoverflow.com/questions/26112785/where-clause-on-a-list-in-a-pandas-dataframe
 mask = dataiku_userlogs['session_path_full'] != pd.Series([[]] * len(dataiku_userlogs))
 clickstream_df = dataiku_userlogs[mask]
-clickstream_df = clickstream_df[['session_id', 'server_date', 'country', 'browser', 'os', 'session_path_full', 'session_categories', 'session_times_spent']]
+clickstream_df = clickstream_df[['session_id', 'server_date', 'country', 'browser', 'os', 'referer', 'session_path_full', 'session_categories', 'session_times_spent']]
 
 clickstream_df_basic = clickstream_df[['session_id', 'session_path_full', 'session_categories', 'session_times_spent']]
 
@@ -354,6 +356,11 @@ clickstream_df['session_total_pages'].describe() #half of the data is bounces, a
 
 clickstream_df['session_total_time'].describe() #since we filled in bounces w/ 10 sec pg duration, 50% of visits last 10 sec. Avg visit length is 47 sec
 
+clickstream_df['session_total_time'].where(clickstream_df['session_total_pages'] > 1).describe()
+clickstream_df['session_total_pages'].where(clickstream_df['session_total_pages'] > 1).describe()
+
+clickstream_df['session_total_pages'].value_counts().plot("bar")
+
 #We can now do more EDA at the session level
 #common browsers, os, devices
 clickstream_df['browser'].value_counts() #Windows 7, Mac OS X top 2 by far
@@ -368,13 +375,35 @@ clickstream_df['session_path_full'].apply(lambda x: landing_pgs.append(x[0]))
 landing_pgs = pd.Series(landing_pgs)
 landing_pgs.value_counts() #home page by far, followed by products, and blog posts
 
+#How about exit page?
+exit_pgs = []
+clickstream_df['session_path_full'].apply(lambda x: exit_pgs.append(x[-1]))
+exit_pgs = pd.Series(exit_pgs)
+exit_pgs.value_counts()
+
 #Same info, but categorized
 landing_cats = []
 clickstream_df['session_categories'].apply(lambda x: landing_cats.append(x[0]))
 pd.Series(landing_cats).value_counts()  #home still leads, but blog posts not very far behind: may imply marketing success
 
 
-#What about top referrer? We didn't chain referrers together, and this would be diff. data than what we'll be working w/ but worth looking at
+#What about top referrer to the website?
+#This would be the referrer to the very first page. Since this is from a tracker, it might include it
+#Let's check it out
+#Since the clickpath's and times were chained to the top row of each session grouping (sorted by session and time), our clickstream_df has this
+
+clickstream_df['referer'].value_counts() #too messy, let's get everything to the left of the first '/'
+clickstream_df['referer_clean'] = clickstream_df['referer'].str.extract('(.*?)/')
+clickstream_df['referer_clean'].value_counts() #top referrers: google.fr, dataiku itself (these are sessions, keep in mind)
+
+clickstream_df['referer_clean'].str.contains('google').value_counts() #Google refers nearly half of the sessions in our dataset
+
+#How about engagement on each page?
+dataiku_userlogs['time_spent'] = dataiku_userlogs['time_spent'].apply(float)
+dataiku_userlogs.pivot_table(values = ['time_spent'], index = ['location'], aggfunc = np.median).sort_values(by=['time_spent'])
+#most are 10, since we set bounces to 10
+
+
 
 
 clickstream_df.head(4)
