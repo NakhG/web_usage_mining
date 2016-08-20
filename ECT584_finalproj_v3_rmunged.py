@@ -337,7 +337,7 @@ times spent on each page of the clickstream
 #solution: https://stackoverflow.com/questions/26112785/where-clause-on-a-list-in-a-pandas-dataframe
 mask = dataiku_userlogs['session_path_full'] != pd.Series([[]] * len(dataiku_userlogs))
 clickstream_df = dataiku_userlogs[mask]
-clickstream_df = clickstream_df[['session_id', 'server_date', 'country', 'browser', 'os', 'referer', 'session_path_full', 'session_categories', 'session_times_spent']]
+clickstream_df = clickstream_df[['session_id', 'server_date', 'country', 'browser', 'os', 'sc_width', 'referer', 'session_path_full', 'session_categories', 'session_times_spent']]
 
 clickstream_df_basic = clickstream_df[['session_id', 'session_path_full', 'session_categories', 'session_times_spent']]
 
@@ -403,6 +403,15 @@ dataiku_userlogs['time_spent'] = dataiku_userlogs['time_spent'].apply(float)
 dataiku_userlogs.pivot_table(values = ['time_spent'], index = ['location'], aggfunc = np.median).sort_values(by=['time_spent'])
 #most are 10, since we set bounces to 10
 
+#We can use sc_width to define mobile or not
+#Very few phones/tablets are wider than 1000
+clickstream_df['sc_width'].describe()
+clickstream_df['mobile/tablet?'] = np.where(clickstream_df['sc_width'] < 1000, 1, 0)
+
+clickstream_df.pivot_table(values = ['mobile/tablet?'], index=['sc_width'], aggfunc = np.count_nonzero)
+clickstream_df.pivot_table(values = ['session_total_time'], index=['mobile/tablet?'], aggfunc = np.mean)  #pretty much the same, maybe because the site is generally simple?
+
+
 
 
 
@@ -433,6 +442,14 @@ Couldn't we use a crosstab of url and referrer?
 This would be moderately different data than our constructed paths, since we forced direct paths for that
 
 '''
+
+#Lets use the original data for this
+
+dataiku_userlogs['referrer_clean'] = dataiku_userlogs['referer'].str.extract('(.*?)/')
+
+dataiku_userlogs['referrer_clean'].value_counts()
+
+'''
 CLUSTERING
 
 What kind of view of the data do we need?
@@ -446,10 +463,8 @@ First, let's try to think of how we can leverage the session-level view
 '''
 
 
-#First lets make a dataframe w/ columns that are every 
-
-For category in unique_categories:
-    for row in sessionized data:
+#What's going in the clustering model
+#per session_id: time spent on every url, total time spent, total pgs visited, 
         
 
 
