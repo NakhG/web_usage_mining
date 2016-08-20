@@ -51,7 +51,7 @@ frequency_df <- frequencies(cls)
 
 #we can now generate something really useful
 #give the beginning of a path, and we can predict the sequence
-startPattern <- new("Pattern", sequence = c(" dataiku.com/products/trynow/"))
+startPattern <- new("Pattern", sequence = c(" dataiku.com/products/"))
 predict(mc, startPattern)
 
 #lets try k-means clustering
@@ -62,6 +62,9 @@ clusters5$centers
 clusters5$withinss
 clusters5$betweenss #doing a good job, but the within distance of cluster5 isn't much better than between distance
 clusters5$tot.withinss
+
+clusters5[5]
+
 
 clusters7 <- clusterClickstreams(cls, order=0, centers=7)
 clusters7$betweenss

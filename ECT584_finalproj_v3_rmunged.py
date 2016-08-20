@@ -411,10 +411,6 @@ clickstream_df['mobile/tablet?'] = np.where(clickstream_df['sc_width'] < 1000, 1
 clickstream_df.pivot_table(values = ['mobile/tablet?'], index=['sc_width'], aggfunc = np.count_nonzero)
 clickstream_df.pivot_table(values = ['session_total_time'], index=['mobile/tablet?'], aggfunc = np.mean)  #pretty much the same, maybe because the site is generally simple?
 
-
-
-
-
 clickstream_df.head(4)
 #test that we got all the rows we wanted: should be 3946
 clickstream_df.shape #yep
@@ -466,9 +462,187 @@ First, let's try to think of how we can leverage the session-level view
 #What's going in the clustering model
 #per session_id: time spent on every url, total time spent, total pgs visited, 
         
+df_session_times_per_pg = pd.DataFrame(dataiku_userlogs.pivot_table(values = ['time_spent'], index = ['session_id'], columns = ['location'], aggfunc = np.sum))
+
+df_session_times_per_pg.fillna(value=0, inplace=True)
+
+df_session_times_per_pg.head(4)
+
+#make sure it's correct
+dataiku_userlogs[['location', 'time_spent']].where(dataiku_userlogs['session_id'] == '0039e021117bf7e')
+
+#let's bring in more data to this dataframe, then we'll normalize all the values and create clusters
+#we'll do that with a shape
+
+df_session_times_per_pg.shape
+
+clickstream_df.shape #ok same amount of sessions
+
+#let's try to merge them
+
+df_session_times_per_pg['session_id'] = df_session_times_per_pg.index
+
+joined_session_data = pd.merge(df_session_times_per_pg, clickstream_df[['session_id', 'session_total_time', 'session_total_pages', 'mobile/tablet?']], how='left', on='session_id')
+
+df_session_times_per_pg = pd.DataFrame(df_session_times_per_pg)
+
+df_session_times_per_pg.head(2)
+
+#you know what ... I can do this in Excel a lot faster. Screw programming.
+df_session_times_per_pg.to_csv("session_pageview_times.csv")
+#after 2 seconds of munging...
+df_session_times_per_pg = pd.read_csv("session_pageview_times.csv")
+df_session_times_per_pg.head(2)
+#now lets join
+
+joined_session_data = pd.merge(df_session_times_per_pg, clickstream_df[['session_id', 'session_total_time', 'session_total_pages', 'mobile/tablet?']], how='left', on='session_id')
+
+joined_session_data.head(2)
+#check that it worked
+clickstream_df['session_total_time'][clickstream_df['session_id'] == '0039e021117bf7e']
+
+#lets make the index the same as session_id ... been meaning to do that for a while
+joined_session_data.set_index('session_id', inplace=True)
+
+from sklearn import preprocessing
+from sklearn.cluster import KMeans
+
+#lets normalize the data
+#Using StandardScaler (http://scikit-learn.org/stable/modules/preprocessing.html#preprocessing-scaler)
+joined_session_array = np.array(joined_session_data)
+joined_session_array
+
+scaler = preprocessing.StandardScaler().fit(joined_session_array)
+scaler
+scaler.mean_
+joined_session_array_scaled = scaler.transform(joined_session_array)
+joined_session_df_scaled = pd.DataFrame(joined_session_array_scaled, index = joined_session_data.index, columns = joined_session_data.columns.values)
+
+cluster = KMeans(n_clusters = 5)
+joined_session_df_scaled['cluster5'] = cluster.fit_predict(joined_session_df_scaled)
+
+joined_session_df_scaled['cluster5'].value_counts()  #hmm that doesn't look good!
+
+cluster15 = KMeans(n_clusters = 15)
+joined_session_df_scaled['cluster15'] = cluster15.fit_predict(joined_session_df_scaled.drop(['cluster5'], axis=1))
+joined_session_df_scaled['cluster15'].value_counts()  #seems like there really is 1 large column
+
+cluster3 = KMeans(n_clusters = 3)
+joined_session_df_scaled['cluster3'] = cluster3.fit_predict(joined_session_df_scaled.drop(['cluster5', 'cluster15'], axis=1))
+joined_session_df_scaled['cluster3'].value_counts()  #hmm that doesn't look good!
+
+cluster4 = KMeans(n_clusters = 4)
+joined_session_df_scaled['cluster4'] = cluster4.fit_predict(joined_session_df_scaled.drop(['cluster5', 'cluster15', 'cluster3'], axis=1))
+joined_session_df_scaled['cluster4'].value_counts()
 
 
+#lets send this to R for agglomerative clustering
+joined_session_df_scaled.drop(['cluster5', 'cluster15', 'cluster3', 'cluster4'], axis=1, inplace=True)
+joined_session_df_scaled.to_csv("joined_session_df_withclusters.csv")
 
+
+#let's try to drop the bounces and then normalize and cluster again
+#we can just remove bounces
+filtered_joined_session_data = joined_session_data[joined_session_data['session_total_pages'] > 1]
+filtered_joined_session_data.shape
+filtered_joined_session_data = filtered_joined_session_data[filtered_joined_session_data['session_total_pages'] < 20]
+filtered_joined_session_data = filtered_joined_session_data[filtered_joined_session_data['session_total_time'] < 400]
+
+filtered_joined_session_array = np.array(filtered_joined_session_data)
+
+
+scaler = preprocessing.StandardScaler().fit(filtered_joined_session_array)
+scaler
+scaler.mean_
+filtered_joined_session_array_scaled = scaler.transform(filtered_joined_session_array)
+filtered_joined_session_df_scaled = pd.DataFrame(filtered_joined_session_array_scaled, index = filtered_joined_session_data.index, columns = filtered_joined_session_data.columns.values)
+
+cluster = KMeans(n_clusters = 5)
+filtered_joined_session_df_scaled['cluster5'] = cluster.fit_predict(filtered_joined_session_df_scaled)
+
+filtered_joined_session_df_scaled['cluster5'].value_counts()  #hmm that doesn't look good!
+
+
+100. * filtered_joined_session_df_scaled['cluster5'].value_counts() / len(filtered_joined_session_df_scaled['cluster5']) 
+100. * joined_session_df_scaled['cluster5'].value_counts() / len(joined_session_df_scaled['cluster5']) 
+
+#let's look at cluster 1 
+filtered_joined_session_df_scaled['session_id'] = filtered_joined_session_df_scaled.index
+joined_session_data['session_id'] = joined_session_data.index
+joined_session_data = pd.merge(joined_session_data, filtered_joined_session_df_scaled[['session_id', 'cluster5']], how='left', on='session_id')
+
+joined_session_data['session_total_time'].where(joined_session_data['cluster5'] == 1).value_counts()  #vast majority are bounces, but not all
+
+from matplotlib import pyplot as plt
+
+for i in range(5):
+    ds = joined_session_data.where(joined_session_data['cluster5'] == i)
+    plt.plot(ds['session_total_time'], ds['session_total_pages'], 'o')
+    
+plt.ylabel('Total Pageviews')
+plt.xlabel('Total Session Time')
+plt.title('K-means (k=5)')
+
+for i in range(5):
+    ds = joined_session_data.where(joined_session_data['cluster5'] == i)
+    plt.plot(ds['session_total_time'], ds['session_total_pages'], 'o')
+    
+plt.ylabel('Total Pageviews')
+plt.xlabel('Total Session Time')
+plt.title('K-means (k=5) FILTERED')
+
+
+#All this probably isn't working because of all the 0 values
+
+#Let's look at the output from the clustering done with the clickstream package in R
+#k = 5, done on data with total pgs 1 < x < 15
+
+R_clickstream_clusters = pd.read_csv("r_cluster_output.csv")
+R_clickstream_clusters.head(2)
+
+#lets join this to our session data and visualize it
+joined_session_data = pd.merge(joined_session_data, R_clickstream_clusters[['session_id', 'clickstream_cluster5']], how='left', on='session_id')
+joined_session_data_Rclusterrows = joined_session_data[np.isfinite(joined_session_data['clickstream_cluster5'])]
+
+for i in range(1,6):
+    ds = joined_session_data_Rclusterrows.where(joined_session_data_Rclusterrows['clickstream_cluster5'] == i)
+    plt.plot(ds['session_total_time'], ds['session_total_pages'], 'o')
+    
+plt.ylabel('Total Pageviews')
+plt.xlabel('Total Session Time')
+plt.title('K-means (k=5) FILTERED (Using clickstreams)')
+
+
+#lets see if we can get a correlation between types of pages visited and clusters
+#we made a df for this
+
+df_session_times_per_pg_andclusters = pd.merge(df_session_times_per_pg, R_clickstream_clusters[['session_id', 'clickstream_cluster5']], how='left', on='session_id')
+df_session_times_per_pg_andclusters = df_session_times_per_pg_andclusters[np.isfinite(df_session_times_per_pg_andclusters['clickstream_cluster5'])]
+
+#can we bring in categories viewed per session_id?
+
+df_session_times_per_category = pd.DataFrame(dataiku_userlogs.pivot_table(values = ['time_spent'], index = ['session_id'], columns = ['page_category'], aggfunc = np.sum))
+
+df_session_times_per_category.fillna(value=0, inplace=True)
+
+df_session_times_per_category.to_csv("session_category_viewtimes.csv")
+#after a munge..
+df_session_times_per_category = pd.read_csv("session_category_viewtimes.csv")
+
+#try to merge
+df_pg_cat_cluster_merge = pd.merge(df_session_times_per_category, df_session_times_per_pg_andclusters, how='left', on='session_id')
+df_pg_cat_cluster_merge = df_pg_cat_cluster_merge[np.isfinite(df_pg_cat_cluster_merge['clickstream_cluster5'])]
+
+df_pg_cat_cluster_merge['clickstream_cluster5'] = df_pg_cat_cluster_merge['clickstream_cluster5'].astype('category')
+
+Rcluster_dummies = pd.get_dummies(df_pg_cat_cluster_merge['clickstream_cluster5'], prefix = "cluster")
+df_pg_cat_cluster_merge = pd.concat([df_pg_cat_cluster_merge, Rcluster_dummies], axis=1)
+
+Rcluster_clickstream_corrmatrix = df_pg_cat_cluster_merge.corr()
+Rcluster_clickstream_corrmatrix.to_csv("Rcluster_corrmatrix.csv")
+
+
+#FOR THE FUTURE: Try Jaccard distance, cosine similarity
 
 
 
