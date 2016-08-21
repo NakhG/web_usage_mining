@@ -41,6 +41,10 @@ writeLines(clickstreams_list, csf)
 cls <- readClickstreams(csf, header = TRUE)
 
 mc <- fitMarkovChain(cls, order=1, verbose = FALSE)  #if we don't remove bounces, can't make a 1st-order model
+mc2 <- fitMarkovChain(cls, order=2, verbose = FALSE)
+
+summary(mc)
+summary(mc2)
 show(mc)  #unreadable
 
 print(summary(mc))
@@ -90,17 +94,6 @@ clusters10[1]
 install.packages("markovchain")
 library("markovchain", lib.loc="C:/Program Files/R/R-3.3.1/library")
 
-dat<-data.frame(replicate(20,sample(c("A", "B", "C","D"), size = 100, replace=TRUE)))
-dat
-
-trans.matrix <- function(X, prob=T){
-  tt <- table( c(X[, -ncol(X)]), c(X[,-1]) )
-  if(prob) tt <- tt / rowSums(tt)
-  tt
-}
-
-trans.matrix(as.matrix(dat))
-
 #a pre-munged set: rows are sessions, columns are each pg. 
 #only sessions with between 2 and 14 clicks (no bounces, no outliers (outliers has loose def. here) )
 #when someone ends their session, the rest of the column values are "(EXIT)"
@@ -115,16 +108,9 @@ head(clickstream_transmat)
 #lets use this transition matrix for the markovchain package
 pages <- colnames(clickstream_transmat)
 
-dtmcA <- as(clickstream_transmat, "markovchain")
+dtmcA <- as(clickstream_transmat, "markovchain") #not square, due to absorbing states!
 
-energyStates <- c("pg1", "pg2")
-byRow <- TRUE
-gen <- matrix(data = c(4, 2, 
-                       8, 12), nrow = 2,
-              byrow = byRow, dimnames = list(energyStates, energyStates))
-generatorToTransitionMatrix(gen)
-
-
+#load in another dataset, pre-generated transition matrix
 ref_to_loc <- read.csv("data4transmat_locandref.csv")
 head(ref_to_loc)
 columnnamez <- colnames(ref_to_loc)
@@ -135,34 +121,33 @@ transition <- ref_to_loc / rowSums(ref_to_loc)
 head(transition)
 transition = round(transition, 3)
 
-transmat_markov <- as(transition, "markovchain")
-summary(transmat_markov)
+transmat_markov <- as(transition, "markovchain") #this is not a probability matrix
 
-
-transition.matrix <- new("markovchain", transitionMatrix = transition)
-markov_plot <- plot(transition.matrix, edge.arrow.size = 0.3)
-
-
-transition.matrix
-
-install.packages("diagram")
-install.packages("pracma")
-library("igraph", lib.loc="C:/Program Files/R/R-3.3.1/library")
-library(diagram)
-library(pracma)
-library(igraph)
-
-layout <- layout.reingold.tilford(markov_plot, circular=T)
-
-install.packages("Gmisc")
-library("Gmisc", lib.loc="C:/Program Files/R/R-3.3.1/library")
-library("ggplot2", lib.loc="C:/Program Files/R/R-3.3.1/library")
-
+#create our heatmaps for the transition matrix
 htmlTable(transition, ctable=TRUE)
 transitionPlot(transition)
 library(RColorBrewer)
 jBuPuFun <- colorRampPalette(brewer.pal(n = 6, "BuPu"))
 paletteSize <- 256
 jBuPuPalette <- jBuPuFun(paletteSize)
-heatmap_absolute <- heatmap(ref_to_loc, Rowv = NA, Colv = NA, scale = "none", col = jBuPuPalette)
-heatmap_probs <- heatmap(transition, Rowv = NA, Colv = NA, scale = "none", col = jBuPuPalette)
+heatmap_absolute <- heatmap(ref_to_loc, Rowv = NA, Colv = NA, scale = "none", margins = c(20,20), col = jBuPuPalette, main="Transition Matrix (absolute terms)")
+heatmap_probs <- heatmap(transition, Rowv = NA, Colv = NA, scale = "none", margins = c(20,20), col = jBuPuPalette, main="Transition Matrix (probability)")
+
+
+
+
+
+#FOR FUTURE, improve the markov chain visualization
+#install.packages("diagram")
+#install.packages("pracma")
+#library("igraph", lib.loc="C:/Program Files/R/R-3.3.1/library")
+#library(diagram)
+#library(pracma)
+#library(igraph)
+
+#layout <- layout.reingold.tilford(markov_plot, circular=T)
+
+#install.packages("Gmisc")
+#library("Gmisc", lib.loc="C:/Program Files/R/R-3.3.1/library")
+#library("ggplot2", lib.loc="C:/Program Files/R/R-3.3.1/library")
+
